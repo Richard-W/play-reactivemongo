@@ -15,9 +15,12 @@
 package play.modules.reactivemongo
 
 import play.api._
+import play.api.inject._
 import javax.inject._
 import reactivemongo.api._
 import akka.actor.ActorSystem
+import scala.concurrent.duration._
+import scala.concurrent.Future
 
 trait ReactiveMongo {
   def driver: MongoDriver
@@ -25,7 +28,11 @@ trait ReactiveMongo {
   def db: DB
 }
 
-final class ReactiveMongoImpl @Inject()(conf: Configuration, actorSystem: ActorSystem) extends ReactiveMongo {
+final class ReactiveMongoImpl @Inject()(
+    conf: Configuration,
+    actorSystem: ActorSystem,
+    applicationLifecycle: ApplicationLifecycle
+) extends ReactiveMongo {
 
   /* Get an execution context */
   import actorSystem.dispatcher
@@ -36,4 +43,10 @@ final class ReactiveMongoImpl @Inject()(conf: Configuration, actorSystem: ActorS
   val driver: MongoDriver = new MongoDriver(actorSystem)
   val connection: MongoConnection = driver.connection(parsedURI)
   val db: DB = connection.db(parsedURI.db.get)
+
+  applicationLifecycle.addStopHook { () ⇒
+    connection.askClose()(10.seconds) map { _ ⇒
+      driver.close
+    }
+  }
 }
